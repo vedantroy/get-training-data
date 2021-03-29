@@ -12,7 +12,7 @@ use tokio::sync::{Mutex, RwLock};
 
 pub struct Filter {
     bloom: RwLock<Bloom<u64>>,
-    wal: RwLock<File>,
+    wal: Mutex<File>,
     prev_checkpoint: Mutex<Box<Instant>>,
 
     checkpoint_secs: u64,
@@ -91,7 +91,7 @@ impl Filter {
 
         Filter {
             bloom: RwLock::new(bloom),
-            wal: RwLock::new(File::create(&wal_path).unwrap()),
+            wal: Mutex::new(File::create(&wal_path).unwrap()),
             prev_checkpoint: Mutex::new(Box::new(Instant::now())),
             checkpoint_path,
             checkpoint_secs,
@@ -99,12 +99,15 @@ impl Filter {
     }
 
     pub async fn set(&self, url_hash: u64) {
-        let mut wal = self.wal.write().await;
+        let mut wal = self.wal.lock().await;
         let mut bloom = self.bloom.write().await;
-        let mut prev_checkpoint = self.prev_checkpoint.lock().await;
         writeln!(wal, "{}", url_hash).unwrap();
         bloom.set(&url_hash);
-        if Instant::now() > *prev_checkpoint.as_ref() + Duration::from_secs(self.checkpoint_secs) {
+        // Drop the bloom as soon as possible so reads can continue
+        drop(bloom);
+        let mut prev_checkpoint = self.prev_checkpoint.lock().await;
+        if prev_checkpoint.elapsed().as_secs() > self.checkpoint_secs {
+            let bloom = self.bloom.read().await;
             checkpoint(&self.checkpoint_path, &bloom);
             wal.set_len(0).unwrap();
             *prev_checkpoint = Box::new(Instant::now());
