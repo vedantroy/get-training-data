@@ -1,0 +1,32 @@
+#domain: "github.com"
+#path_exclude_re: '[^\/]+\/(blob|tree|commit|pull|actions|projects|security|pulse|branches|compare|stargazers|pulls|network|graphs|community|tags|commits|watchers|raw|find|labels)'
+#
+#maps:
+#  - path_match_re: '[^\/]+'
+#    abs_root_url: "https://github.com/vedantroy"
+#    labels:
+#      - selector: ""
+#        list: false
+#
+
+#domain: "yelp.com"
+#path_exclude_re: '[^\/]+\/(blob|tree|commit|pull|actions|projects|security|pulse|branches|compare|stargazers|pulls|network|graphs|community|tags|commits|watchers|raw|find|labels)'
+#
+#maps:
+#  - path_match_re: 'biz/[^\/]+/.*'
+#    abs_root_url: "https://www.yelp.com/biz/woori-korean-brooklyn-2"
+#    labels:
+#      - selector: ""
+#        list: false
+
+domain: "yelp.com"
+path_exclude_re: '[^\\/]+\\/(blob|tree|commit|pull|actions|projects|security|pulse|branches|compare|stargazers|pulls|network|graphs|community|tags|commits|watchers|raw|find|labels)'
+
+maps:
+  - path_match_re: 'user_details\?userid=.*'
+    abs_root_url: "https://www.yelp.com/user_details?userid=i0N4XE7OrT_jP7mtvJNiHA"
+    labels:
+      - selector: ""
+        list: false
+
+# https://www.yelp.com/user_details?userid=i0N4XE7OrT_jP7mtvJNiHA
