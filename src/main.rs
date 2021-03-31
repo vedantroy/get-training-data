@@ -2,18 +2,14 @@ use anyhow::{anyhow, bail, Result};
 use env_logger;
 use fasthash::metro::hash64;
 use futures;
-use get_training_data::{
-    bloom::{self, Filter},
-    globals::{
-        LabelMap, Selector, BLOOM, CLIENT, CONFIG, DB, EXCLUDE_RE, LABEL_MAP, MATCH_RE, URL_QUEUE,
-    },
+use get_training_data::globals::{
+    LabelMap, Save, SelectorValue, BLOOM, CLIENT, CONFIG, DB, EXCLUDE_RE, INVERT_EXCLUDE,
+    LABEL_MAP, MATCH_RE, SAVER, URL_QUEUE,
 };
 use kuchiki::{self, traits::*, NodeRef};
 use log::{debug, info, trace, warn};
 use reqwest::StatusCode;
-use serde::Serialize;
-use serde_json::{self, json};
-use std::{collections::BTreeMap, fs, path::PathBuf};
+use std::collections::BTreeMap;
 use tokio::{
     self,
     time::{sleep, Duration},
@@ -73,12 +69,6 @@ fn get_training_input(root: &NodeRef) -> Option<String> {
     }
 }
 
-#[derive(Serialize)]
-enum SelectorValue {
-    Str(String),
-    Arr(Vec<String>),
-}
-
 fn get_training_output(page: &NodeRef, url: &Url) -> BTreeMap<String, SelectorValue> {
     let mut path = url.path();
     if path.starts_with("/") {
@@ -136,7 +126,7 @@ fn apply_label_map(page: &NodeRef, map: &LabelMap) -> BTreeMap<String, SelectorV
     out
 }
 
-fn get_links(page: &NodeRef, cur: Url) -> Vec<Url> {
+fn get_links(page: &NodeRef, cur: &Url) -> Vec<Url> {
     // TODO: Using a regex to get URLs would (probably) be faster.
     // It doesn't matter though b/c real bottlenecks are disk/applying the label map
     let links: Vec<_> = match page.select("a[href]") {
@@ -184,6 +174,7 @@ fn get_links(page: &NodeRef, cur: Url) -> Vec<Url> {
             };
             // EXCLUDE_RE is not a real option (even though we can call option methods on it)
             // so we can't do `u.and(EXCLUDE_RE)`
+            // TODO: We can probably dereference it (*EXCLUDE_RE)
             let u = match EXCLUDE_RE.as_ref().and(u) {
                 Some(u) => {
                     let mut path = u.path();
@@ -193,10 +184,21 @@ fn get_links(page: &NodeRef, cur: Url) -> Vec<Url> {
                     // chop off the "/"
                     path = &path[1..];
                     let exclude = EXCLUDE_RE.as_ref().unwrap();
-                    if exclude.is_match(path) {
-                        None
+                    // INVERT_EXCLUDE == true: "exclude every that does not match this regex"
+                    // INVERT_EXCLUDE == false: "exclude every that does match this regex"
+                    let is_match = exclude.is_match(path);
+                    if *INVERT_EXCLUDE {
+                        if is_match {
+                            Some(u)
+                        } else {
+                            None
+                        }
                     } else {
-                        Some(u)
+                        if is_match {
+                            None
+                        } else {
+                            Some(u)
+                        }
                     }
                 }
                 None => None,
@@ -208,31 +210,44 @@ fn get_links(page: &NodeRef, cur: Url) -> Vec<Url> {
 }
 
 // all non-fatal errors bubble up to this function
-async fn process(url: Url) -> Result<()> {
-    let bytes = fetch(url.clone()).await?;
-    // TODO: Is there a way to do this w/o clone?
-    let page = String::from_utf8(bytes.clone())?;
-    let page = kuchiki::parse_html().one(page);
-    let input = get_training_input(&page).ok_or(anyhow!("No training input for: {:?}", url))?;
-    let output = get_training_output(&page, &url);
+async fn process(url: &Url) -> Result<()> {
+    let links = {
+        let bytes = fetch(url.clone()).await?;
+        // TODO: Is there a way to do this w/o clone?
+        let page_str = String::from_utf8(bytes.clone())?;
+        let page = kuchiki::parse_html().one(page_str.as_str());
+        let input = get_training_input(&page).ok_or(anyhow!("No training input for: {:?}", url))?;
+        let output = get_training_output(&page, &url);
 
-    let json = json!({
-        "raw": bytes,
-        "input": input,
-        "labels": output,
-    });
+        if output.len() > 0 {
+            let save = Save {
+                url: url.to_string(),
+                raw: page_str,
+                input,
+                labels: output,
+            };
+            SAVER.add(save);
+        }
 
-    //Add JSON to the saver
-
-    let links = get_links(&page, url);
+        get_links(&page, &url)
+    };
+    let mut urls_added: usize = 0;
     for url in &links {
-        add_url(url).await;
+        if add_url(url).await.unwrap() {
+            trace!("Added url: {}", url.to_string());
+            urls_added += 1;
+        }
     }
+    trace!(
+        "Processed url: {:?}, added: {} links",
+        url.as_str(),
+        urls_added
+    );
     Ok(())
 }
 
 async fn worker() -> Result<()> {
-    trace!("Running worker...");
+    info!("Running worker...");
     loop {
         // ? operator for fatal errors
         let url = match URL_QUEUE.pop_min()? {
@@ -243,41 +258,54 @@ async fn worker() -> Result<()> {
             }
             None => {
                 trace!("No work, sleeping...");
-                sleep(Duration::from_millis(CONFIG.ms_worker_check)).await;
+                sleep(Duration::from_millis(CONFIG.worker_check_ms)).await;
                 continue;
             }
         };
 
-        process(url).await?;
+        if let Err(e) = process(&url).await {
+            warn!("error processing url: {:?}. {:?}", url.to_string(), e);
+        }
     }
 }
 
-async fn add_url(s: &Url) -> Result<()> {
+async fn add_url(s: &Url) -> Result<bool> {
     let bytes = s.as_str().as_bytes();
     let hash = hash64(bytes);
-    if !BLOOM.check(hash).await {
+    Ok(if !BLOOM.check(hash).await {
         let id = DB.generate_id()?;
         BLOOM.set(hash).await;
         URL_QUEUE.insert(id.to_be_bytes(), bytes)?;
-    }
-    Ok(())
+        true
+    } else {
+        false
+    })
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
     env_logger::init();
 
+    // Use a blocking thread for the saver b/c I'm too lazy to figure
+    // out how to store async function pointers in the save method
+    // w/o async function pointers we have to use blocking IO
+    // which blocks the underlying tokio thread
+    // giving the saver its own dedicated thread should prevent issues
+    tokio::task::spawn_blocking(move || {
+        futures::executor::block_on(SAVER.run());
+    });
+
     if URL_QUEUE.is_empty() {
         let root_urls = &LABEL_MAP.maps.len();
         for map in &LABEL_MAP.maps {
             let url = Url::parse(&map.abs_root_url)?;
-            add_url(url).await?;
+            add_url(&url).await?;
         }
         if URL_QUEUE.is_empty() {
             bail!("URL queue is empty after adding {} root url(s) from label maps. We are either completely out of URLs or there's a bug.", root_urls);
         }
     }
-    trace!("Starting with: {} urls", URL_QUEUE.len());
+    info!("Starting with: {} urls", URL_QUEUE.len());
     // If we don't wait on  the join handles then
     // we can't use async inside the workers b/c the
     // runtime terminates?!

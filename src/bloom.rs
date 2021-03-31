@@ -1,13 +1,13 @@
 // Concurrent bloom fitler w/ WAL
+use crate::globals::DB;
 use bincode;
 use bloomfilter::Bloom;
 use log::{trace, warn};
-use std::cell::RefCell;
 use std::fs::File;
 use std::io::prelude::*;
 use std::io::BufReader;
 use std::path::PathBuf;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use tokio::sync::{Mutex, RwLock};
 
 pub struct Filter {
@@ -70,7 +70,7 @@ impl Filter {
                 for url in lines {
                     // https://stackoverflow.com/questions/63358858/rust-chaining-results-combinators
                     let url: Result<u64, _> = url.map_err(|e| e.to_string()).and_then(|u| {
-                        if u.len() < 19 || u.len() > 21 {
+                        if u.len() < 16 || u.len() > 21 {
                             return Err(format!("Unexpected hash length: {}", u.len()));
                         }
                         u.parse()

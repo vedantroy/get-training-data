@@ -1,4 +1,7 @@
-use crate::bloom::{self, Filter};
+use crate::{
+    bloom::{self, Filter},
+    save::{self, Saver},
+};
 use lazy_static::lazy_static;
 use log::trace;
 use regex::Regex;
@@ -6,18 +9,26 @@ use reqwest::{
     header::{HeaderMap, HeaderValue},
     Client, ClientBuilder,
 };
-use serde::{self, Deserialize};
+use serde::{self, Deserialize, Serialize};
+use serde_json;
 use sled::{Db, Tree};
-use std::path::PathBuf;
+use std::io::prelude::*;
+use std::path::{Path, PathBuf};
 use std::{
     collections::{BTreeMap, HashMap},
-    fs,
+    fs::{self, File},
 };
+
+#[derive(Deserialize, Debug)]
+pub struct PathExcludeSettings {
+    re: String,
+    invert: bool,
+}
 
 #[derive(Deserialize, Debug)]
 pub struct LabelMaps {
     pub domain: String,
-    pub path_exclude_re: Option<String>,
+    pub path_exclude: Option<PathExcludeSettings>,
     headers: Option<BTreeMap<String, String>>,
     pub maps: Vec<LabelMap>,
 }
@@ -39,21 +50,34 @@ pub struct Selector {
 #[derive(Deserialize, Debug)]
 pub struct Config {
     db_path: String,
+    save_path: String,
     pub filter_path: String,
+    chunk_size: usize,
 
     pub filter_bytes: usize,
     pub filter_expected_entries: usize,
     pub filter_checkpoint_secs: u64,
 
     pub workers: usize,
-    #[serde(default = "default_ms_worker_check")]
-    pub ms_worker_check: u64,
+    pub worker_check_ms: u64,
+    pub saver_check_secs: u64,
 
     pub label_map: String,
 }
 
-fn default_ms_worker_check() -> u64 {
-    500
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(untagged)]
+pub enum SelectorValue {
+    Str(String),
+    Arr(Vec<String>),
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct Save {
+    pub url: String,
+    pub raw: String,
+    pub input: String,
+    pub labels: BTreeMap<String, SelectorValue>,
 }
 
 lazy_static! {
@@ -86,9 +110,15 @@ lazy_static! {
     };
     pub static ref EXCLUDE_RE: Option<Regex> = {
         LABEL_MAP
-            .path_exclude_re
+            .path_exclude
             .as_ref()
-            .and_then(|re| Some(Regex::new(&re).unwrap()))
+            .and_then(|s| Some(Regex::new(&s.re).unwrap()))
+    };
+    pub static ref INVERT_EXCLUDE: bool = {
+        if LABEL_MAP.path_exclude.is_none() {
+            return false;
+        }
+        LABEL_MAP.path_exclude.as_ref().unwrap().invert
     };
     pub static ref MATCH_RE: HashMap<String, Regex> = {
         let mut re_map = HashMap::new();
@@ -107,11 +137,36 @@ lazy_static! {
                 }
                 ClientBuilder::new()
                     .default_headers(headers)
+                    .gzip(true)
+                    .brotli(true)
                     .build()
                     .unwrap()
             }
             None => Client::new(),
         };
         client
+    };
+    pub static ref SAVER: Saver<Save> = {
+        fn save(idx: usize, v: &Vec<Save>) {
+            trace!("Saving chunk: {}...", idx);
+            let path = format!("{}/{}.json", CONFIG.save_path, idx);
+            if Path::new(&path).exists() {
+                panic!("Path: {} already exists", path)
+            }
+            let mut f = File::create(path).unwrap();
+            let bytes = serde_json::to_vec(v).unwrap();
+            f.write_all(&bytes).unwrap();
+        }
+        fs::create_dir_all(&CONFIG.save_path).unwrap();
+        let paths = fs::read_dir(&CONFIG.save_path).unwrap();
+
+        Saver::new(
+            save,
+            save::Config {
+                check_interval_secs: CONFIG.saver_check_secs,
+                chunk_size: CONFIG.chunk_size,
+                start_chunk: paths.count() + 1,
+            },
+        )
     };
 }

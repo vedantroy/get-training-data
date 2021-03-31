@@ -1,32 +1,42 @@
-#domain: "github.com"
-#path_exclude_re: '[^\/]+\/(blob|tree|commit|pull|actions|projects|security|pulse|branches|compare|stargazers|pulls|network|graphs|community|tags|commits|watchers|raw|find|labels)'
-#
-#maps:
-#  - path_match_re: '[^\/]+'
-#    abs_root_url: "https://github.com/vedantroy"
-#    labels:
-#      - selector: ""
-#        list: false
-#
-
-#domain: "yelp.com"
-#path_exclude_re: '[^\/]+\/(blob|tree|commit|pull|actions|projects|security|pulse|branches|compare|stargazers|pulls|network|graphs|community|tags|commits|watchers|raw|find|labels)'
-#
-#maps:
-#  - path_match_re: 'biz/[^\/]+/.*'
-#    abs_root_url: "https://www.yelp.com/biz/woori-korean-brooklyn-2"
-#    labels:
-#      - selector: ""
-#        list: false
-
 domain: "yelp.com"
-path_exclude_re: '[^\\/]+\\/(blob|tree|commit|pull|actions|projects|security|pulse|branches|compare|stargazers|pulls|network|graphs|community|tags|commits|watchers|raw|find|labels)'
+path_exclude:
+  re: '^(user_details|^$|user_details_friends)$'
+  invert: true
 
 maps:
-  - path_match_re: 'user_details\?userid=.*'
-    abs_root_url: "https://www.yelp.com/user_details?userid=i0N4XE7OrT_jP7mtvJNiHA"
+  - path_match_re: '^user_details_friends$'
+    abs_root_url: "https://yelp.com"
     labels:
-      - selector: ""
+      - selector: "body > div.main-content-wrap.main-content-wrap--full > div.top-shelf.top-shelf-grey > div > div > div.user-profile_content-wrapper.arrange.arrange--bottom.arrange--30 > div.user-profile_info.arrange_unit > h1"
+        name: "name"
+        list: false
+      - selector: "#dropdown_user-name"
+        name: "friend"
+        list: true
+      - selector: "body > div.main-content-wrap.main-content-wrap--full > div.content-container > div > div.column.column-beta > ul > li > ul > li > div > div.media-story > ul.user-passport-info > li.user-location.responsive-hidden-small > b"
+        name: "friend location"
+        list: true
+      - selector: ".user-tagline"
+        name: "description"
+        list: false
+      - selector: "li.friend-count > strong"
+        name: "number of friends"
+        list: false
+      - selector: "li.review-count > strong"
+        name: "number of reviews"
         list: false
 
-# https://www.yelp.com/user_details?userid=i0N4XE7OrT_jP7mtvJNiHA
+headers:
+  accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9'
+  # reqwest supports gzip, brotli. Not sure about deflate.
+  "accept-encoding": 'gzip, br'
+  "accept-language": 'en-US,en;q=0.9'
+  "cache-control":   'max-age=0'
+  "cookie":          'hl=en_US; wdi=1|C95C2D16D6AD0706|0x1.8119ba1f5fee7p+30|e99677e8a776e00a; fbm_97534753161=base_domain=.yelp.com; G_ENABLED_IDPS=google; sc=fed22c2b2a; hsfd=0; bse=f830ffec321b4ae284d67269ed4cd943; recentlocations=; location=%7B%22city%22%3A+%22Brooklyn%22%2C+%22state%22%3A+%22NY%22%2C+%22country%22%3A+%22US%22%2C+%22latitude%22%3A+40.639723046023335%2C+%22longitude%22%3A+-73.94369141543405%2C+%22max_latitude%22%3A+40.73965882575999%2C+%22min_latitude%22%3A+40.565410033014324%2C+%22max_longitude%22%3A+-73.83144135083012%2C+%22min_longitude%22%3A+-74.04842133129887%2C+%22zip%22%3A+%22%22%2C+%22address1%22%3A+%22%22%2C+%22address2%22%3A+%22%22%2C+%22address3%22%3A+%22%22%2C+%22neighborhood%22%3A+%22%22%2C+%22borough%22%3A+%22%22%2C+%22provenance%22%3A+%22YELP_GEOCODING_ENGINE%22%2C+%22display%22%3A+%22Brooklyn%2C+NY%22%2C+%22unformatted%22%3A+%22Brooklyn%2C+NY%22%2C+%22isGoogleHood%22%3A+false%2C+%22usingDefaultZip%22%3A+false%2C+%22accuracy%22%3A+4%2C+%22language%22%3A+null%7D; fbsr_97534753161=F14cwpk-sX61QEeMShXPpBXRtMP-CqJXFQ2gWBGYdOA.eyJ1c2VyX2lkIjoiNTE1ODQ5NjM1NDMxMzEyIiwiY29kZSI6IkFRQ29FZzRvN2xWbV9rNHdKOHp3b015Y3hGQ1c3RmFHNDB2UV9MMTN4MHJsNHFJVGZReGduNGNfcTQ0THB3ZVNIZ0ctOVpFVUZiYkxwazhORUt3NXZ4NURLZ0czeTBPdkF4YXRPbTV4NWE0M3RQTllYeWdjT3VPNXBhNlM5TG9CWkNGOXk3MEdHZ2RZbXdlUENsNUF5dHhidGNIWmI2UHBlUXl4a05qVWlpeGZocThodFJsbTBNdHFGczgxb0VEV09FaGtBN1NkWUN5YUN6NTFzaUEwZUswY2NtdUVoOVozZTllYlZBVXFFNE1HQ19INTdNMV9BTXU2dnd3Qi1SdWZNMUtvaERUVzgtRTJua2lXNTRrWmkxMGNWbEtEeUlnZmR1MDJkZ1NaWVQ5bVVHT1FwcXUycmVWSHBvY0tuaTFsSXFxOTdRbzhVanduSTJkMUJQUjdLZzZEanV5czFRLTE2ZndUYVNWeVNHVlNQUSIsIm9hdXRoX3Rva2VuIjoiRUFBQUFGcldHT1lrQkFQbVNISVdkTVhBVThGbEFaQkVJOUx3eDdxQUhoT25hOEtJcTV4N1VDYVVoSHB6UFpBbEhaQzc3V090ZFVzYVNTdlpCTTllMFBCY3hOWkF6MjdMenIxU2xUTVJUcmo4WVl5SGFuNEFaQkRBZENUSWxLTUY5V3RhSHNNVDlqekxnZ0pYWkJKOGJheXNtdXdBem9TV1gxMUhhbElQTW0xRWV1QmNRdk84WUZPblNaQ2pyRldzQjNLVkc4Z25vQmxJSEdnWkRaRCIsImFsZ29yaXRobSI6IkhNQUMtU0hBMjU2IiwiaXNzdWVkX2F0IjoxNjE3MDgxMzI5fQ; fbsr_97534753161=F14cwpk-sX61QEeMShXPpBXRtMP-CqJXFQ2gWBGYdOA.eyJ1c2VyX2lkIjoiNTE1ODQ5NjM1NDMxMzEyIiwiY29kZSI6IkFRQ29FZzRvN2xWbV9rNHdKOHp3b015Y3hGQ1c3RmFHNDB2UV9MMTN4MHJsNHFJVGZReGduNGNfcTQ0THB3ZVNIZ0ctOVpFVUZiYkxwazhORUt3NXZ4NURLZ0czeTBPdkF4YXRPbTV4NWE0M3RQTllYeWdjT3VPNXBhNlM5TG9CWkNGOXk3MEdHZ2RZbXdlUENsNUF5dHhidGNIWmI2UHBlUXl4a05qVWlpeGZocThodFJsbTBNdHFGczgxb0VEV09FaGtBN1NkWUN5YUN6NTFzaUEwZUswY2NtdUVoOVozZTllYlZBVXFFNE1HQ19INTdNMV9BTXU2dnd3Qi1SdWZNMUtvaERUVzgtRTJua2lXNTRrWmkxMGNWbEtEeUlnZmR1MDJkZ1NaWVQ5bVVHT1FwcXUycmVWSHBvY0tuaTFsSXFxOTdRbzhVanduSTJkMUJQUjdLZzZEanV5czFRLTE2ZndUYVNWeVNHVlNQUSIsIm9hdXRoX3Rva2VuIjoiRUFBQUFGcldHT1lrQkFQbVNISVdkTVhBVThGbEFaQkVJOUx3eDdxQUhoT25hOEtJcTV4N1VDYVVoSHB6UFpBbEhaQzc3V090ZFVzYVNTdlpCTTllMFBCY3hOWkF6MjdMenIxU2xUTVJUcmo4WVl5SGFuNEFaQkRBZENUSWxLTUY5V3RhSHNNVDlqekxnZ0pYWkJKOGJheXNtdXdBem9TV1gxMUhhbElQTW0xRWV1QmNRdk84WUZPblNaQ2pyRldzQjNLVkc4Z25vQmxJSEdnWkRaRCIsImFsZ29yaXRobSI6IkhNQUMtU0hBMjU2IiwiaXNzdWVkX2F0IjoxNjE3MDgxMzI5fQ; xcj=1|B-vWr41qJ2q39iPmpDcAAcHZ7hJqm5_Oe6benTcL8Lc; pid=2cdb2fcf4f6f8972; OptanonConsent=isIABGlobal=false&datestamp=Tue+Mar+30+2021+01%3A19%3A54+GMT-0400+(Eastern+Daylight+Time)&version=6.10.0&hosts=&consentId=d93b1728-5302-4c2a-a3ba-a14b8238a644&interactionCount=1&landingPath=NotLandingPage&groups=BG10%3A1%2CC0003%3A1%2CC0002%3A1%2CC0001%3A1%2CC0004%3A0&AwaitingReconsent=false'
+  "dnt": "1"
+  "src-fetch-dest": "document"
+  "src-fetch-mode": "navigate"
+  "src-fetch-site": "none"
+  "src-fetch-user": "?1"
+  "upgrade-insecure-requests": "1"
+  "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/84.0.4147.135 Safari/537.36"
