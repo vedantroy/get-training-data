@@ -7,7 +7,7 @@ use get_training_data::globals::{
     LABEL_MAP, MATCH_RE, SAVER, URL_QUEUE,
 };
 use kuchiki::{self, traits::*, NodeRef};
-use log::{debug, info, trace, warn};
+use log::{debug, error, info, trace, warn};
 use reqwest::StatusCode;
 use std::collections::BTreeMap;
 use tokio::{
@@ -114,7 +114,11 @@ fn apply_label_map(page: &NodeRef, map: &LabelMap) -> BTreeMap<String, SelectorV
 
     let mut out = BTreeMap::new();
     for label in &map.labels {
-        if label.list.is_some() {
+        let is_list = label
+            .list
+            .and_then(|v| if v { Some(v) } else { None })
+            .is_some();
+        if is_list {
             let els: Vec<_> = try_selector!(page.select(&label.selector), label).collect();
             let texts: Vec<_> = els.iter().map(|e| e.text_contents()).collect();
             out.insert(label.name.clone(), SelectorValue::Arr(texts));
@@ -226,7 +230,8 @@ async fn process(url: &Url) -> Result<()> {
                 input,
                 labels: output,
             };
-            SAVER.add(save);
+            let json_str = serde_json::to_string(&save).unwrap();
+            SAVER.add(json_str);
         }
 
         get_links(&page, &url)
@@ -247,7 +252,7 @@ async fn process(url: &Url) -> Result<()> {
 }
 
 async fn worker() -> Result<()> {
-    info!("Running worker...");
+    trace!("Running worker...");
     loop {
         // ? operator for fatal errors
         let url = match URL_QUEUE.pop_min()? {
@@ -292,7 +297,12 @@ async fn main() -> Result<()> {
     // which blocks the underlying tokio thread
     // giving the saver its own dedicated thread should prevent issues
     tokio::task::spawn_blocking(move || {
-        futures::executor::block_on(SAVER.run());
+        futures::executor::block_on(async move {
+            if let Err(e) = SAVER.run().await {
+                error!("Error saving: {:?}", e);
+                std::process::exit(1);
+            }
+        });
     });
 
     if URL_QUEUE.is_empty() {

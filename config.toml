@@ -1,10 +1,15 @@
 db_path = "state/db"
 filter_path = "state/filter"
+save_path = "data"
+chunk_size = 5
+
+worker_check_ms  = 1000
+saver_check_secs = 1
 
 # 0.1GB in bytes
 filter_bytes = 100_000_000
 filter_expected_entries = 100_000_000
-filter_checkpoint_secs = 30
+filter_checkpoint_secs = 300
 
 label_map = "label_map.yaml"
-workers = 1
+workers = 100

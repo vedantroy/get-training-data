@@ -1,5 +1,4 @@
 // Concurrent bloom fitler w/ WAL
-use crate::globals::DB;
 use bincode;
 use bloomfilter::Bloom;
 use log::{trace, warn};

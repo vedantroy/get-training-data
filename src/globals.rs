@@ -2,6 +2,7 @@ use crate::{
     bloom::{self, Filter},
     save::{self, Saver},
 };
+use anyhow::{bail, Result};
 use lazy_static::lazy_static;
 use log::trace;
 use regex::Regex;
@@ -13,9 +14,11 @@ use serde::{self, Deserialize, Serialize};
 use serde_json;
 use sled::{Db, Tree};
 use std::io::prelude::*;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::{
     collections::{BTreeMap, HashMap},
+    fmt::Write as fmt_write,
     fs::{self, File},
 };
 
@@ -146,17 +149,23 @@ lazy_static! {
         };
         client
     };
-    pub static ref SAVER: Saver<Save> = {
-        fn save(idx: usize, v: &Vec<Save>) {
+    pub static ref SAVER: Saver<String> = {
+        fn save(idx: usize, v: &Vec<String>) -> Result<()> {
             trace!("Saving chunk: {}...", idx);
             let path = format!("{}/{}.json", CONFIG.save_path, idx);
             if Path::new(&path).exists() {
-                panic!("Path: {} already exists", path)
+                bail!("Path: {} already exists", path);
             }
-            let mut f = File::create(path).unwrap();
-            let bytes = serde_json::to_vec(v).unwrap();
-            f.write_all(&bytes).unwrap();
+            let mut f = File::create(path)?;
+            let mut json_arr: String = format!("[{}", v[0]);
+            for val in v[1..].iter() {
+                write!(json_arr, ", {}", val)?;
+            }
+            write!(json_arr, "]")?;
+            f.write_all(json_arr.as_bytes())?;
+            Ok(())
         }
+
         fs::create_dir_all(&CONFIG.save_path).unwrap();
         let paths = fs::read_dir(&CONFIG.save_path).unwrap();
 
